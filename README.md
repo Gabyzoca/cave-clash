@@ -1,96 +1,94 @@
-# Arena Game
 
-Um jogo 2D de arena desenvolvido em **Python com Pygame**, com sistema de ondas de inimigos, diferentes tipos de inimigos, animações, combate e HUD.
+# Cave Clash
+
+Jogo 2D de ação e sobrevivência desenvolvido em **Python com Pygame**, com combate em tempo real, animações, ondas de inimigos e sistema de pontuação.
 
 ## Sobre o projeto
 
-O jogador controla um personagem em uma arena e precisa enfrentar ondas de inimigos cada vez mais desafiadoras.
+Cave Clash é um jogo de arena 2D no qual o jogador precisa sobreviver a três ondas de inimigos, utilizando movimentação, ataques e habilidades.
 
-O projeto foi desenvolvido como uma aplicação prática para estudar conceitos de programação, desenvolvimento de jogos 2D e organização de projetos em Python.
+Cada tipo de inimigo possui atributos próprios de vida, velocidade e dano. Conforme a partida avança, os inimigos se tornam mais desafiadores.
 
-## Tecnologias
+O projeto foi desenvolvido para explorar conceitos de programação orientada a objetos, animações com spritesheets, detecção de colisões, gerenciamento de estados e organização modular de código.
 
-* Python 3.14
-* Pygame
-* Git
-* GitHub
+## Tecnologias utilizadas
+
+- Python 3.14
+- Pygame
+- Git e GitHub
 
 ## Funcionalidades
 
-* Movimentação do personagem
-* Corrida
-* Ataques
-* Dash
-* Cura
-* Sistema de vida
-* Sistema de ondas
-* 3 tipos de inimigos
-* Diferentes atributos para cada inimigo
-* Animações de personagens e inimigos
-* HUD com informações da partida
-* Tela de Game Over
-* Sistema de dano
-* Cenário com efeito de paralaxe
+- Movimentação lateral e corrida
+- Animações de personagens e inimigos
+- Dois tipos de ataque
+- Habilidade de cura
+- Sistema de cooldown das habilidades
+- Detecção de colisões e aplicação de dano
+- Três tipos diferentes de inimigos
+- Geração automática de inimigos
+- Três ondas com dificuldade progressiva
+- Sistema de pontuação
+- Barra de vida e indicadores de habilidades
+- Telas de vitória e derrota
+- Reinício da partida
+- Suporte a efeitos sonoros
 
 ## Controles
 
-| Tecla     | Ação                  |
-| --------- | --------------------- |
-| `A` / `←` | Mover para a esquerda |
-| `D` / `→` | Mover para a direita  |
-| `Shift`   | Correr                |
-| `Space`   | Ataque 1              |
-| `E`       | Ataque 2              |
-| `Ctrl`    | Dash                  |
-| `H`       | Curar                 |
+| Tecla | Ação |
+|---|---|
+| A / ← | Mover para a esquerda |
+| D / → | Mover para a direita |
+| Shift | Correr |
+| Espaço | Ataque principal |
+| E | Ataque secundário |
+| H | Curar |
+| R | Reiniciar após o fim da partida |
+| Esc | Sair |
 
 ## Estrutura do projeto
 
 ```text
-arena_game/
+cave-clash/
 ├── main.py
+├── combate.py
+├── inimigos.py
 ├── hud.py
-├── .gitignore
+├── assets/
+│   ├── background/
+│   ├── enemies/
+│   │   ├── enemy1/
+│   │   ├── enemy2/
+│   │   └── enemy3/
+│   └── player/
 ├── README.md
-└── assets/
-    ├── background/
-    ├── enemies/
-    │   ├── enemy1/
-    │   ├── enemy2/
-    │   └── enemy3/
-    └── player/
-        ├── DASH/
-        ├── DEATH/
-        ├── HEAL/
-        ├── HURT/
-        ├── IDLE/
-        ├── RUN/
-        ├── WALK/
-        ├── attack_1/
-        └── attack_2/
+└── .gitignore
 ```
+
+### Organização dos módulos
+
+- **main.py:** inicialização, cenário, personagem, movimentação, animações e loop principal.
+- **combate.py:** ataques, habilidades, cooldowns, colisões e efeitos sonoros.
+- **inimigos.py:** comportamento dos inimigos, atributos, ataques e gerenciamento de ondas.
+- **hud.py:** pontuação, barra de vida, indicadores e telas de fim de jogo.
 
 ## Como executar
 
-### 1. Clone o repositório
+### 1. Clonar o repositório
 
 ```bash
-git clone https://github.com/Gabyzoca/arena-game-pygame.git
+git clone https://github.com/Gabyzoca/cave-clash.git
+cd cave-clash
 ```
 
-### 2. Entre na pasta do projeto
-
-```bash
-cd arena-game-pygame
-```
-
-### 3. Crie um ambiente virtual
+### 2. Criar o ambiente virtual
 
 ```bash
 python -m venv .venv
 ```
 
-### 4. Ative o ambiente virtual
+### 3. Ativar o ambiente virtual
 
 No Windows PowerShell:
 
@@ -98,22 +96,24 @@ No Windows PowerShell:
 .venv\Scripts\Activate.ps1
 ```
 
-### 5. Instale o Pygame
+### 4. Instalar o Pygame
 
 ```bash
-pip install pygame
+python -m pip install pygame-ce
 ```
 
-### 6. Execute o jogo
+### 5. Executar o jogo
 
 ```bash
 python main.py
 ```
 
-## Objetivo
+## Objetivo do jogo
 
-Sobreviver às ondas de inimigos e avançar pela arena utilizando movimentação, ataques, dash e cura.
+Derrotar todos os inimigos das três ondas e alcançar a maior pontuação possível sem perder toda a vida.
 
-## Status
+## Status do projeto
 
-Em desenvolvimento.
+**Versão funcional.**
+
+O jogo possui seus principais sistemas implementados e poderá receber novas funcionalidades e melhorias.

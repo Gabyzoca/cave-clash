@@ -45,7 +45,7 @@ ESTADOS_UNICOS = [
 pygame.init()
 
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
-pygame.display.set_caption("Arena Game")
+pygame.display.set_caption("Cave Clash")
 
 clock = pygame.time.Clock()
 
