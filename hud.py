@@ -1,6 +1,7 @@
 import pygame
 import math
 
+
 # ============================================================
 # CORES
 # ============================================================
@@ -15,6 +16,25 @@ COR_VIDA_MEDIA = (230, 200, 60)
 COR_VIDA_BAIXA = (220, 60, 60)
 
 COR_PAINEL = (18, 18, 24, 170)
+
+# ============================================================
+# LAYOUT DO TOPO (todos os painéis usam os mesmos valores)
+# ============================================================
+
+MARGEM = 24
+TOPO_PAINEL = 20
+ALTURA_PAINEL = 72
+
+LARGURA_PAINEL_LATERAL = 320
+LARGURA_PAINEL_CENTRO = 240
+
+DURACAO_POPUP = 1.0
+
+HABILIDADES = [
+    ("SPACE", "Ataque 1", "attack_1"),
+    ("E", "Ataque 2", "attack_2"),
+    ("H", "Cura", "heal")
+]
 
 
 # ============================================================
@@ -71,6 +91,7 @@ def desenhar_texto_com_sombra(
     if centrado:
 
         rect = principal.get_rect(center=(x, y))
+
         screen.blit(sombra, (rect.x + 2, rect.y + 2))
         screen.blit(principal, rect)
 
@@ -80,7 +101,13 @@ def desenhar_texto_com_sombra(
         screen.blit(principal, (x, y))
 
 
-def desenhar_painel(screen, rect, cor=COR_PAINEL, borda=COR_BORDA, raio=10):
+def desenhar_painel(
+    screen,
+    rect,
+    cor=COR_PAINEL,
+    borda=COR_BORDA,
+    raio=10
+):
 
     superficie = pygame.Surface(
         (rect.width, rect.height),
@@ -116,9 +143,6 @@ class HUD:
         self.largura = largura
         self.altura = altura
 
-        # Garante que o módulo de fontes do pygame já foi
-        # inicializado, mesmo que o HUD seja criado antes
-        # (ou sem) um pygame.init() completo.
         if not pygame.font.get_init():
 
             pygame.font.init()
@@ -126,43 +150,46 @@ class HUD:
         self.fonte_pequena = pygame.font.Font(None, 22)
         self.fonte_media = pygame.font.Font(None, 30)
         self.fonte_grande = pygame.font.Font(None, 68)
+        self.fonte_popup = pygame.font.Font(None, 34)
 
-        # Vida exibida na tela, que persegue a realidade
-        # suavemente (dá aquele efeito de barra "escorregando")
+        # Vida exibida (persegue a vida real suavemente)
         self.vida_exibida = None
-
-        # Tempo interno, usado para animações (pulsar, brilhar etc)
-        self.tempo = 0
-
-        # Flash vermelho quando o jogador toma dano
-        self.flash_dano = 0
-
         self.vida_anterior = None
 
-        # Fade da tela de fim de jogo
+        self.tempo = 0
+
+        self.flash_dano = 0
+
         self.fade_fim = 0
+
+        # Pontuação
+        self.pontuacao = 0
+        self.pontuacao_exibida = 0
+
+        # Textos flutuantes "+100"
+        self.popups = []
 
     # ========================================================
     # ATUALIZAR
     # ========================================================
 
-    def atualizar(self, dt, player):
+    def atualizar(self, dt, player, ondas):
 
         self.tempo += dt
+
+        # ---------------- Vida ----------------
 
         if self.vida_exibida is None:
 
             self.vida_exibida = player.vida
             self.vida_anterior = player.vida
 
-        # Detecta se o jogador acabou de tomar dano
         if player.vida < self.vida_anterior:
 
             self.flash_dano = 0.35
 
         self.vida_anterior = player.vida
 
-        # A barra "escorrega" até a realidade
         diferenca = player.vida - self.vida_exibida
 
         self.vida_exibida += diferenca * min(1, dt * 6)
@@ -173,11 +200,52 @@ class HUD:
 
         if self.flash_dano > 0:
 
-            self.flash_dano -= dt
+            self.flash_dano = max(0, self.flash_dano - dt)
 
-            if self.flash_dano < 0:
+        # ---------------- Pontuação ----------------
 
-                self.flash_dano = 0
+        self.contabilizar_pontos(ondas)
+
+        diferenca_pontos = self.pontuacao - self.pontuacao_exibida
+
+        self.pontuacao_exibida += diferenca_pontos * min(1, dt * 8)
+
+        if abs(diferenca_pontos) < 1:
+
+            self.pontuacao_exibida = self.pontuacao
+
+        # ---------------- Popups ----------------
+
+        for popup in self.popups:
+
+            popup["tempo"] += dt
+
+        self.popups = [
+            popup
+            for popup in self.popups
+            if popup["tempo"] < DURACAO_POPUP
+        ]
+
+    # ========================================================
+    # PONTUAÇÃO: identifica inimigos derrotados
+    # ========================================================
+
+    def contabilizar_pontos(self, ondas):
+
+        for inimigo in ondas.inimigos:
+
+            if inimigo.vida <= 0 and not inimigo.pontuado:
+
+                inimigo.pontuado = True
+
+                self.pontuacao += inimigo.pontos
+
+                self.popups.append({
+                    "texto": f"+{inimigo.pontos}",
+                    "x": inimigo.x,
+                    "y": inimigo.y - 180,
+                    "tempo": 0
+                })
 
     # ========================================================
     # DESENHAR TUDO
@@ -187,23 +255,26 @@ class HUD:
         self,
         screen,
         player,
-        onda_atual,
+        combate,
         ondas,
-        inimigos,
         jogo_terminado
     ):
 
-        self._desenhar_flash_dano(screen, player)
+        self.desenhar_flash_dano(screen)
 
-        self._desenhar_vida(screen, player)
+        self.desenhar_popups(screen)
 
-        self._desenhar_onda(screen, onda_atual, ondas, inimigos)
+        self.desenhar_vida(screen, player)
 
-        self._desenhar_habilidades(screen, player)
+        self.desenhar_pontuacao(screen)
+
+        self.desenhar_onda(screen, ondas)
+
+        self.desenhar_habilidades(screen, player, combate)
 
         if jogo_terminado:
 
-            self._desenhar_fim_de_jogo(screen, player, onda_atual, ondas)
+            self.desenhar_fim_de_jogo(screen, player, ondas)
 
         else:
 
@@ -213,7 +284,7 @@ class HUD:
     # FLASH VERMELHO AO RECEBER DANO
     # ========================================================
 
-    def _desenhar_flash_dano(self, screen, player):
+    def desenhar_flash_dano(self, screen):
 
         if self.flash_dano <= 0:
 
@@ -231,54 +302,69 @@ class HUD:
         screen.blit(superficie, (0, 0))
 
     # ========================================================
-    # BARRA DE VIDA
+    # TEXTOS FLUTUANTES (+100)
     # ========================================================
 
-    def _desenhar_vida(self, screen, player):
+    def desenhar_popups(self, screen):
 
-        # ========================================================
-        # POSIÇÃO DO PAINEL
-        # ========================================================
+        for popup in self.popups:
 
-        largura = 300
-        altura = 26
+            t = popup["tempo"] / DURACAO_POPUP
 
-        x = 28
-        y = 18
+            x = int(popup["x"])
+            y = int(popup["y"] - 60 * t)
 
-        largura_painel = largura + 24
-        altura_painel = 70
+            alpha = int(255 * (1 - t))
+
+            sombra = self.fonte_popup.render(
+                popup["texto"],
+                True,
+                COR_TEXTO_SOMBRA
+            )
+
+            texto = self.fonte_popup.render(
+                popup["texto"],
+                True,
+                (255, 220, 90)
+            )
+
+            sombra.set_alpha(alpha)
+            texto.set_alpha(alpha)
+
+            rect = texto.get_rect(center=(x, y))
+
+            screen.blit(sombra, (rect.x + 2, rect.y + 2))
+            screen.blit(texto, rect)
+
+    # ========================================================
+    # BARRA DE VIDA (painel esquerdo)
+    # ========================================================
+
+    def desenhar_vida(self, screen, player):
 
         rect_painel = pygame.Rect(
-            x - 12,
-            y,
-            largura_painel,
-            altura_painel
+            MARGEM,
+            TOPO_PAINEL,
+            LARGURA_PAINEL_LATERAL,
+            ALTURA_PAINEL
         )
 
         desenhar_painel(screen, rect_painel)
-
-        # ========================================================
-        # TÍTULO
-        # ========================================================
 
         desenhar_texto_com_sombra(
             screen,
             self.fonte_pequena,
             "HERÓI",
-            x,
-            y + 10
+            rect_painel.centerx,
+            rect_painel.y + 18,
+            centrado=True
         )
 
-        # ========================================================
-        # BARRA DE VIDA
-        # ========================================================
-
         rect_fundo = pygame.Rect(
-            x,
-            y + 34,
-            largura,
-            altura
+            rect_painel.x + 16,
+            rect_painel.y + 34,
+            rect_painel.width - 32,
+            26
         )
 
         pygame.draw.rect(
@@ -293,19 +379,15 @@ class HUD:
             min(1, self.vida_exibida / player.vida_maxima)
         )
 
-        largura_vida = int(
-            largura * porcentagem
-        )
+        largura_vida = int(rect_fundo.width * porcentagem)
 
         if largura_vida > 0:
 
             cor = cor_da_vida(porcentagem)
 
-            # Leve brilho quando a vida está baixa
+            # Pulsa quando a vida está baixa
             if porcentagem < 0.3:
-                pulso = (
-                                math.sin(self.tempo * 6) + 1
-                        ) / 2
+                pulso = (math.sin(self.tempo * 6) + 1) / 2
 
                 cor = interpolar_cor(
                     cor,
@@ -314,10 +396,10 @@ class HUD:
                 )
 
             rect_vida = pygame.Rect(
-                x,
-                y + 34,
+                rect_fundo.x,
+                rect_fundo.y,
                 largura_vida,
-                altura
+                rect_fundo.height
             )
 
             pygame.draw.rect(
@@ -335,13 +417,9 @@ class HUD:
             border_radius=6
         )
 
-        # ========================================================
-        # TEXTO DA VIDA
-        # ========================================================
-
         texto_vida = (
-            f"{max(0, int(round(player.vida)))} "
-            f"/ {player.vida_maxima}"
+            f"{max(0, int(round(player.vida)))}"
+            f" / {player.vida_maxima}"
         )
 
         desenhar_texto_com_sombra(
@@ -354,123 +432,113 @@ class HUD:
         )
 
     # ========================================================
-    # INDICADOR DE ONDA
+    # PONTUAÇÃO (painel central)
     # ========================================================
 
-    def _desenhar_onda(
-            self,
-            screen,
-            onda_atual,
-            ondas,
-            inimigos
-    ):
+    def desenhar_pontuacao(self, screen):
 
-        if onda_atual >= len(ondas):
-            return
-
-        onda = ondas[onda_atual]
-
-        largura_painel = 220
-        altura_painel = 70
-
-        # Mesmo Y do painel de vida
         rect_painel = pygame.Rect(
-            self.largura - largura_painel - 24,
-            18,
-            largura_painel,
-            altura_painel
+            0,
+            TOPO_PAINEL,
+            LARGURA_PAINEL_CENTRO,
+            ALTURA_PAINEL
         )
 
-        desenhar_painel(
+        rect_painel.centerx = self.largura // 2
+
+        desenhar_painel(screen, rect_painel)
+
+        desenhar_texto_com_sombra(
             screen,
-            rect_painel
+            self.fonte_pequena,
+            "PONTOS",
+            rect_painel.centerx,
+            rect_painel.y + 18,
+            centrado=True
         )
-
-        # ========================================================
-        # NÚMERO DA ONDA
-        # ========================================================
 
         desenhar_texto_com_sombra(
             screen,
             self.fonte_media,
-            f"ONDA {onda_atual + 1} / {len(ondas)}",
+            f"{int(round(self.pontuacao_exibida)):06d}",
             rect_painel.centerx,
-            rect_painel.y + 20,
+            rect_painel.y + 46,
+            cor=(255, 220, 90),
             centrado=True
         )
 
-        # ========================================================
-        # INIMIGOS RESTANTES
-        # ========================================================
+    # ========================================================
+    # INDICADOR DE ONDA (painel direito)
+    # ========================================================
 
-        vivos = sum(
-            1
-            for inimigo in inimigos
-            if not inimigo.morto
+    def desenhar_onda(self, screen, ondas):
+
+        rect_painel = pygame.Rect(
+            self.largura - MARGEM - LARGURA_PAINEL_LATERAL,
+            TOPO_PAINEL,
+            LARGURA_PAINEL_LATERAL,
+            ALTURA_PAINEL
         )
 
-        restantes = (
-                vivos
-                + (len(onda) - len(inimigos))
+        desenhar_painel(screen, rect_painel)
+
+        if ondas.terminou:
+            desenhar_texto_com_sombra(
+                screen,
+                self.fonte_pequena,
+                "ONDA",
+                rect_painel.centerx,
+                rect_painel.y + 18,
+                centrado=True
+            )
+
+            desenhar_texto_com_sombra(
+                screen,
+                self.fonte_media,
+                "COMPLETA!",
+                rect_painel.centerx,
+                rect_painel.y + 46,
+                cor=(120, 220, 140),
+                centrado=True
+            )
+
+            return
+
+        desenhar_texto_com_sombra(
+            screen,
+            self.fonte_pequena,
+            f"ONDA {ondas.numero_onda} / {ondas.total_ondas}",
+            rect_painel.centerx,
+            rect_painel.y + 18,
+            centrado=True
         )
 
-        restantes = max(
-            0,
-            restantes
-        )
+        total = ondas.total_na_onda()
+        derrotados = ondas.derrotados_na_onda()
 
-        # ========================================================
-        # BOLINHAS DOS INIMIGOS
-        # ========================================================
-
-        total = len(onda)
-
-        raio = 6
-        espaco = 18
-
-        largura_bolinhas = (
-                total * espaco
-        )
+        raio = 7
+        espaco = 22
 
         x_inicial = (
                 rect_painel.centerx
-                - largura_bolinhas // 2
-                + espaco // 2
+                - (total - 1) * espaco // 2
         )
 
-        y_bolinhas = (
-                rect_painel.y + 46
-        )
+        y_bolinhas = rect_painel.y + 46
 
         for i in range(total):
 
-            centro = (
-                x_inicial + i * espaco,
-                y_bolinhas
-            )
+            centro = (x_inicial + i * espaco, y_bolinhas)
 
-            if i < (total - restantes):
+            if i < derrotados:
 
-                cor = (
-                    90,
-                    90,
-                    100
-                )
+                cor = (90, 90, 100)
 
             else:
 
-                cor = (
-                    220,
-                    80,
-                    80
-                )
+                cor = (220, 80, 80)
 
-            pygame.draw.circle(
-                screen,
-                cor,
-                centro,
-                raio
-            )
+            pygame.draw.circle(screen, cor, centro, raio)
 
             pygame.draw.circle(
                 screen,
@@ -481,37 +549,34 @@ class HUD:
             )
 
     # ========================================================
-    # BARRA DE HABILIDADES
+    # INDICADORES DE HABILIDADES (com cooldown)
     # ========================================================
 
-    def _desenhar_habilidades(self, screen, player):
-
-        habilidades = [
-            ("SPACE", "Ataque 1", "attack_1"),
-            ("E", "Ataque 2", "attack_2"),
-            ("CTRL", "Dash", "dash"),
-            ("H", "Cura", "heal")
-        ]
+    def desenhar_habilidades(self, screen, player, combate):
 
         largura_icone = 78
         altura_icone = 58
         espaco = 12
 
         total_largura = (
-            len(habilidades) * largura_icone
-            + (len(habilidades) - 1) * espaco
+            len(HABILIDADES) * largura_icone
+            + (len(HABILIDADES) - 1) * espaco
         )
 
         x_inicial = self.largura // 2 - total_largura // 2
         y = self.altura - altura_icone - 22
 
-        for i, (tecla, nome, estado) in enumerate(habilidades):
+        for i, (tecla, nome, habilidade) in enumerate(HABILIDADES):
 
             x = x_inicial + i * (largura_icone + espaco)
 
             rect = pygame.Rect(x, y, largura_icone, altura_icone)
 
-            ativo = player.estado == estado
+            ativo = player.estado == habilidade
+
+            fracao = combate.fracao_cooldown(habilidade)
+
+            em_cooldown = fracao > 0
 
             cor_fundo = (60, 60, 90, 200) if ativo else (20, 20, 26, 170)
 
@@ -523,29 +588,64 @@ class HUD:
                 raio=8
             )
 
+            # Película escura que "desce" conforme o cooldown acaba
+            if em_cooldown:
+
+                altura_cd = int((altura_icone - 4) * fracao)
+
+                if altura_cd > 0:
+
+                    pelicula = pygame.Surface(
+                        (largura_icone - 4, altura_cd),
+                        pygame.SRCALPHA
+                    )
+
+                    pelicula.fill((0, 0, 0, 150))
+
+                    screen.blit(pelicula, (rect.x + 2, rect.y + 2))
+
+            cor_texto = (140, 140, 140) if em_cooldown else COR_TEXTO
+
             desenhar_texto_com_sombra(
                 screen,
                 self.fonte_pequena,
                 tecla,
                 rect.centerx,
                 rect.y + 16,
+                cor=cor_texto,
                 centrado=True
             )
 
-            desenhar_texto_com_sombra(
-                screen,
-                self.fonte_pequena,
-                nome,
-                rect.centerx,
-                rect.y + 40,
-                centrado=True
-            )
+            if em_cooldown:
+
+                segundos = combate.cooldown_restante(habilidade)
+
+                desenhar_texto_com_sombra(
+                    screen,
+                    self.fonte_pequena,
+                    f"{segundos:.1f}s",
+                    rect.centerx,
+                    rect.y + 40,
+                    cor=(255, 220, 90),
+                    centrado=True
+                )
+
+            else:
+
+                desenhar_texto_com_sombra(
+                    screen,
+                    self.fonte_pequena,
+                    nome,
+                    rect.centerx,
+                    rect.y + 40,
+                    centrado=True
+                )
 
     # ========================================================
     # TELA DE FIM DE JOGO
     # ========================================================
 
-    def _desenhar_fim_de_jogo(self, screen, player, onda_atual, ondas):
+    def desenhar_fim_de_jogo(self, screen, player, ondas):
 
         self.fade_fim = min(1, self.fade_fim + 0.02)
 
@@ -554,11 +654,11 @@ class HUD:
             pygame.SRCALPHA
         )
 
-        superficie.fill((0, 0, 0, int(160 * self.fade_fim)))
+        superficie.fill((0, 0, 0, int(170 * self.fade_fim)))
 
         screen.blit(superficie, (0, 0))
 
-        venceu = onda_atual >= len(ondas) and player.vida > 0
+        venceu = ondas.terminou and player.vida > 0
 
         if venceu:
 
@@ -572,23 +672,49 @@ class HUD:
 
         pulso = (math.sin(self.tempo * 3) + 1) / 2
 
-        cor_pulsante = interpolar_cor(cor, (255, 255, 255), pulso * 0.25)
+        cor_pulsante = interpolar_cor(
+            cor,
+            (255, 255, 255),
+            pulso * 0.25
+        )
+
+        centro_x = self.largura // 2
+        centro_y = self.altura // 2
 
         desenhar_texto_com_sombra(
             screen,
             self.fonte_grande,
             texto,
-            self.largura // 2,
-            self.altura // 2 - 20,
+            centro_x,
+            centro_y - 50,
             cor=cor_pulsante,
             centrado=True
         )
 
         desenhar_texto_com_sombra(
             screen,
+            self.fonte_media,
+            "Pontuação final",
+            centro_x,
+            centro_y + 10,
+            centrado=True
+        )
+
+        desenhar_texto_com_sombra(
+            screen,
+            self.fonte_grande,
+            f"{self.pontuacao}",
+            centro_x,
+            centro_y + 55,
+            cor=(255, 220, 90),
+            centrado=True
+        )
+
+        desenhar_texto_com_sombra(
+            screen,
             self.fonte_pequena,
-            "Pressione ESC para sair",
-            self.largura // 2,
-            self.altura // 2 + 40,
+            "R - Jogar novamente   |   ESC - Sair",
+            centro_x,
+            centro_y + 110,
             centrado=True
         )

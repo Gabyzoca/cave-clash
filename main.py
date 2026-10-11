@@ -1,6 +1,9 @@
-from hud import HUD
 import pygame
 import os
+
+from combate import Combate
+from inimigos import GerenciadorOndas
+from hud import HUD
 
 
 # ============================================================
@@ -17,15 +20,22 @@ PLAYER_CANVAS_WIDTH = 96
 PLAYER_CANVAS_HEIGHT = 80
 PLAYER_SCALE = 2
 
-ENEMY_FRAME_SIZE = 100
-ENEMY_SCALE = 2
+# Estados em que o jogador não pode andar nem usar habilidades
+ESTADOS_BLOQUEANTES = [
+    "attack_1",
+    "attack_2",
+    "hurt",
+    "death",
+    "heal",
+]
 
-DISTANCIA_ATAQUE = 65
-
-TEMPO_ENTRE_INIMIGOS = 1.5
-
-DANO_ATAQUE_1 = 25
-DANO_ATAQUE_2 = 35
+# Estados que tocam uma vez e voltam para "idle"
+ESTADOS_UNICOS = [
+    "attack_1",
+    "attack_2",
+    "hurt",
+    "heal",
+]
 
 
 # ============================================================
@@ -36,7 +46,6 @@ pygame.init()
 
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
 pygame.display.set_caption("Arena Game")
-hud = HUD(WIDTH, HEIGHT)
 
 clock = pygame.time.Clock()
 
@@ -166,15 +175,18 @@ class Player:
         self.frame_atual = 0
         self.tempo_animacao = 0
 
-        self.attack_hit_enemies = set()
-
-        self.dash_distancia = 180
-
-        self.cura = 25
+        # Guarda o nome da última animação "única" que acabou
+        # (ex: "heal"). O Combate lê isso para aplicar a cura
+        # e depois limpa o valor.
+        self.animacao_terminou = None
 
         self.animacoes = {}
 
         self.carregar_animacoes()
+
+    # ========================================================
+    # CARREGAR ANIMAÇÕES
+    # ========================================================
 
     def carregar_animacoes(self):
 
@@ -191,7 +203,6 @@ class Player:
             "attack_2",
             "heal",
             "hurt",
-            "dash",
             "death"
         ]
 
@@ -223,6 +234,10 @@ class Player:
                 else:
 
                     self.animacoes[estado][direcao] = []
+
+    # ========================================================
+    # RETÂNGULO DO PERSONAGEM
+    # ========================================================
 
     def get_rect(self):
 
@@ -270,30 +285,9 @@ class Player:
 
         return rect
 
-    def get_attack_rect(self):
-
-        largura = 75
-        altura = 60
-
-        distancia = 20
-
-        if self.direcao == "right":
-
-            return pygame.Rect(
-                self.x + distancia,
-                self.y - altura,
-                largura,
-                altura
-            )
-
-        else:
-
-            return pygame.Rect(
-                self.x - distancia - largura,
-                self.y - altura,
-                largura,
-                altura
-            )
+    # ========================================================
+    # ESTADO
+    # ========================================================
 
     def mudar_estado(self, novo_estado):
 
@@ -304,16 +298,28 @@ class Player:
             self.frame_atual = 0
             self.tempo_animacao = 0
 
+    def pode_agir(self):
+
+        return self.estado not in ESTADOS_BLOQUEANTES
+
+    # ========================================================
+    # MOVER (respeitando os limites da tela)
+    # ========================================================
+
+    def mover(self, deslocamento):
+
+        self.x = max(
+            30,
+            min(WIDTH - 30, self.x + deslocamento)
+        )
+
+    # ========================================================
+    # MOVIMENTO
+    # ========================================================
+
     def atualizar_movimento(self, dt):
 
-        if self.estado in [
-            "attack_1",
-            "attack_2",
-            "hurt",
-            "death",
-            "heal",
-            "dash"
-        ]:
+        if not self.pode_agir():
 
             return
 
@@ -362,7 +368,7 @@ class Player:
 
                 self.mudar_estado("walk")
 
-            self.x += (
+            self.mover(
                 movimento
                 * velocidade
                 * dt
@@ -372,97 +378,11 @@ class Player:
 
             self.mudar_estado("idle")
 
-        self.x = max(
-            30,
-            min(WIDTH - 30, self.x)
-        )
-
         self.y = CHAO
 
-    def atacar_1(self):
-
-        if self.estado in [
-            "attack_1",
-            "attack_2",
-            "hurt",
-            "death",
-            "heal",
-            "dash"
-        ]:
-
-            return
-
-        self.attack_hit_enemies.clear()
-
-        self.mudar_estado(
-            "attack_1"
-        )
-
-    def atacar_2(self):
-
-        if self.estado in [
-            "attack_1",
-            "attack_2",
-            "hurt",
-            "death",
-            "heal",
-            "dash"
-        ]:
-
-            return
-
-        self.attack_hit_enemies.clear()
-
-        self.mudar_estado(
-            "attack_2"
-        )
-
-    def fazer_dash(self):
-
-        if self.estado in [
-            "attack_1",
-            "attack_2",
-            "hurt",
-            "death",
-            "heal",
-            "dash"
-        ]:
-
-            return
-
-        self.mudar_estado("dash")
-
-        if self.direcao == "right":
-
-            self.x += self.dash_distancia
-
-        else:
-
-            self.x -= self.dash_distancia
-
-        self.x = max(
-            30,
-            min(WIDTH - 30, self.x)
-        )
-
-    def curar(self):
-
-        if self.estado in [
-            "attack_1",
-            "attack_2",
-            "hurt",
-            "death",
-            "heal",
-            "dash"
-        ]:
-
-            return
-
-        if self.vida >= self.vida_maxima:
-
-            return
-
-        self.mudar_estado("heal")
+    # ========================================================
+    # RECEBER DANO
+    # ========================================================
 
     def receber_dano(self, dano):
 
@@ -479,15 +399,15 @@ class Player:
 
         if self.vida <= 0:
 
-            self.mudar_estado(
-                "death"
-            )
+            self.mudar_estado("death")
 
         else:
 
-            self.mudar_estado(
-                "hurt"
-            )
+            self.mudar_estado("hurt")
+
+    # ========================================================
+    # ANIMAÇÃO
+    # ========================================================
 
     def atualizar_animacao(self, dt):
 
@@ -496,6 +416,14 @@ class Player:
         ][self.direcao]
 
         if not frames:
+
+            # Se faltar o sprite de uma animação "única",
+            # termina na hora para o jogador não ficar travado
+            if self.estado in ESTADOS_UNICOS:
+
+                self.animacao_terminou = self.estado
+
+                self.mudar_estado("idle")
 
             return
 
@@ -531,26 +459,15 @@ class Player:
 
                 self.frame_atual = 0
 
-                if self.estado in [
-                    "attack_1",
-                    "attack_2",
-                    "hurt",
-                    "heal",
-                    "dash"
-                ]:
+                if self.estado in ESTADOS_UNICOS:
 
-                    if self.estado == "heal":
+                    self.animacao_terminou = self.estado
 
-                        self.vida += self.cura
+                    self.mudar_estado("idle")
 
-                        self.vida = min(
-                            self.vida,
-                            self.vida_maxima
-                        )
-
-                    self.mudar_estado(
-                        "idle"
-                    )
+    # ========================================================
+    # DESENHAR
+    # ========================================================
 
     def desenhar(self):
 
@@ -598,463 +515,22 @@ class Player:
 
 
 # ============================================================
-# CONFIGURAÇÃO DOS INIMIGOS
+# NOVO JOGO
 # ============================================================
 
-ENEMY_CONFIG = {
+def novo_jogo():
 
-    1: {
-        "pasta": "enemy1",
-        "vida": 50,
-        "velocidade": 100,
-        "dano": 10
-    },
+    return (
+        Player(),
+        Combate(),
+        GerenciadorOndas(),
+        HUD(WIDTH, HEIGHT)
+    )
 
-    2: {
-        "pasta": "enemy2",
-        "vida": 80,
-        "velocidade": 75,
-        "dano": 15
-    },
 
-    3: {
-        "pasta": "enemy3",
-        "vida": 120,
-        "velocidade": 55,
-        "dano": 20
-    }
-}
-
-
-# ============================================================
-# INIMIGO
-# ============================================================
-
-class Enemy:
-
-    def __init__(self, tipo, x):
-
-        config = ENEMY_CONFIG[tipo]
-
-        self.tipo = tipo
-
-        self.x = x
-        self.y = CHAO
-
-        self.vida_maxima = config["vida"]
-        self.vida = self.vida_maxima
-
-        self.velocidade = config["velocidade"]
-        self.dano = config["dano"]
-
-        if x < WIDTH // 2:
-
-            self.direcao_movimento = "right"
-
-        else:
-
-            self.direcao_movimento = "left"
-
-        self.estado = "idle"
-
-        self.frame_atual = 0
-        self.tempo_animacao = 0
-
-        self.tempo_ataque = 0
-
-        self.ja_deu_dano = False
-
-        self.morto = False
-
-        self.animacoes = {}
-
-        self.carregar_animacoes()
-
-    def carregar_animacoes(self):
-
-        enemy_path = os.path.join(
-            ASSETS_DIR,
-            "enemies",
-            ENEMY_CONFIG[self.tipo]["pasta"]
-        )
-
-        arquivos = {
-
-            "idle": "idle.png",
-
-            "walk": "walk.png",
-
-            "attack_01": "attack_01.png",
-
-            "attack_02": "attack_02.png",
-
-            "hurt": "hurt.png",
-
-            "death": "death.png"
-        }
-
-        for estado, nome_arquivo in arquivos.items():
-
-            caminho = os.path.join(
-                enemy_path,
-                nome_arquivo
-            )
-
-            if os.path.exists(caminho):
-
-                self.animacoes[estado] = (
-                    carregar_spritesheet(
-                        caminho,
-                        ENEMY_FRAME_SIZE,
-                        ENEMY_FRAME_SIZE
-                    )
-                )
-
-            else:
-
-                self.animacoes[estado] = []
-
-    def get_rect(self):
-
-        frames = self.animacoes[
-            self.estado
-        ]
-
-        if not frames:
-
-            return pygame.Rect(
-                self.x - 30,
-                self.y - 80,
-                60,
-                80
-            )
-
-        frame = frames[
-            min(
-                self.frame_atual,
-                len(frames) - 1
-            )
-        ]
-
-        frame = pygame.transform.scale(
-            frame,
-            (
-                ENEMY_FRAME_SIZE * ENEMY_SCALE,
-                ENEMY_FRAME_SIZE * ENEMY_SCALE
-            )
-        )
-
-        area_personagem = frame.get_bounding_rect(
-            min_alpha=1
-        )
-
-        rect = pygame.Rect(
-            0,
-            0,
-            area_personagem.width,
-            area_personagem.height
-        )
-
-        rect.centerx = self.x
-        rect.bottom = self.y
-
-        return rect
-
-    def get_attack_rect(self):
-
-        distancia = 15
-        largura = 75
-        altura = 65
-
-        if self.direcao_movimento == "right":
-
-            return pygame.Rect(
-                self.x + distancia,
-                self.y - altura,
-                largura,
-                altura
-            )
-
-        else:
-
-            return pygame.Rect(
-                self.x - distancia - largura,
-                self.y - altura,
-                largura,
-                altura
-            )
-
-    def mudar_estado(self, novo_estado):
-
-        if self.estado != novo_estado:
-
-            self.estado = novo_estado
-
-            self.frame_atual = 0
-            self.tempo_animacao = 0
-
-    def atualizar(self, dt, player):
-
-        if self.morto:
-
-            return
-
-        self.tempo_ataque -= dt
-
-        if self.estado == "death":
-
-            self.atualizar_animacao(dt)
-
-            return
-
-        if self.estado == "hurt":
-
-            self.atualizar_animacao(dt)
-
-            return
-
-        if self.estado in [
-            "attack_01",
-            "attack_02"
-        ]:
-
-            self.atualizar_animacao(dt)
-
-            if (
-                self.estado == "attack_02"
-                and not self.ja_deu_dano
-            ):
-
-                ataque = self.get_attack_rect()
-                jogador = player.get_rect()
-
-                if ataque.colliderect(jogador):
-
-                    player.receber_dano(
-                        self.dano
-                    )
-
-                    self.ja_deu_dano = True
-
-            return
-
-        distancia_x = (
-            player.x - self.x
-        )
-
-        distancia = abs(
-            distancia_x
-        )
-
-        if distancia_x > 0:
-
-            self.direcao_movimento = "right"
-
-        elif distancia_x < 0:
-
-            self.direcao_movimento = "left"
-
-        if (
-            distancia <= DISTANCIA_ATAQUE
-            and self.tempo_ataque <= 0
-        ):
-
-            self.mudar_estado(
-                "attack_01"
-            )
-
-            self.tempo_ataque = 1.0
-
-            self.ja_deu_dano = False
-
-        else:
-
-            if distancia_x > 0:
-
-                self.x += (
-                    self.velocidade
-                    * dt
-                )
-
-            elif distancia_x < 0:
-
-                self.x -= (
-                    self.velocidade
-                    * dt
-                )
-
-            self.mudar_estado(
-                "walk"
-            )
-
-        self.y = CHAO
-
-        self.atualizar_animacao(dt)
-
-    def receber_dano(self, dano):
-
-        if self.morto:
-
-            return
-
-        if self.estado == "death":
-
-            return
-
-        self.vida -= dano
-
-        self.vida = max(
-            0,
-            self.vida
-        )
-
-        if self.vida <= 0:
-
-            self.mudar_estado(
-                "death"
-            )
-
-        else:
-
-            self.mudar_estado(
-                "hurt"
-            )
-
-    def atualizar_animacao(self, dt):
-
-        frames = self.animacoes[
-            self.estado
-        ]
-
-        if not frames:
-            return
-
-        if self.estado == "death":
-            velocidade_animacao = 0.15
-        elif self.estado == "hurt":
-            velocidade_animacao = 0.08
-        else:
-            velocidade_animacao = 0.10
-
-        self.tempo_animacao += dt
-
-        if self.tempo_animacao >= velocidade_animacao:
-
-            self.tempo_animacao = 0
-            self.frame_atual += 1
-
-            if self.estado == "death":
-
-                if self.frame_atual >= len(frames):
-                    self.frame_atual = (len(frames) - 1)
-                    self.morto = True
-
-            elif self.frame_atual >= len(frames):
-
-                self.frame_atual = 0
-
-                if self.estado == "attack_01":
-                    self.mudar_estado("attack_02")
-
-                elif self.estado in ["attack_02", "hurt"]:
-                    self.mudar_estado("idle")
-
-    def desenhar(self):
-
-        frames = self.animacoes[
-            self.estado
-        ]
-
-        if not frames:
-
-            return
-
-        frame = frames[
-            min(
-                self.frame_atual,
-                len(frames) - 1
-            )
-        ]
-
-        frame = pygame.transform.scale(
-            frame,
-            (
-                ENEMY_FRAME_SIZE * ENEMY_SCALE,
-                ENEMY_FRAME_SIZE * ENEMY_SCALE
-            )
-        )
-
-        if self.direcao_movimento == "left":
-
-            frame = pygame.transform.flip(
-                frame,
-                True,
-                False
-            )
-
-        area_personagem = frame.get_bounding_rect(
-            min_alpha=1
-        )
-
-        pos_x = (
-            self.x
-            - area_personagem.centerx
-        )
-
-        pos_y = (
-            self.y
-            - area_personagem.bottom
-        )
-
-        screen.blit(
-            frame,
-            (pos_x, pos_y)
-        )
-
-
-# ============================================================
-# ONDAS
-# ============================================================
-
-ONDAS = [
-
-    [1, 1, 1, 1],
-
-    [1, 1, 2, 2, 1, 2],
-
-    [1, 2, 2, 3, 3, 2, 3, 1]
-]
-
-
-onda_atual = 0
-
-inimigos = []
-
-indice_spawn = 0
-
-tempo_spawn = 0
+player, combate, ondas, hud = novo_jogo()
 
 jogo_terminado = False
-
-
-def iniciar_onda():
-
-    global indice_spawn
-    global tempo_spawn
-
-    indice_spawn = 0
-    tempo_spawn = 0
-
-    inimigos.clear()
-
-
-# ============================================================
-# CRIAR JOGADOR
-# ============================================================
-
-player = Player()
-
-iniciar_onda()
 
 
 # ============================================================
@@ -1079,24 +555,24 @@ while rodando:
 
         if event.type == pygame.KEYDOWN:
 
-            if event.key == pygame.K_SPACE:
+            if event.key == pygame.K_ESCAPE:
 
-                player.atacar_1()
+                rodando = False
 
-            if event.key == pygame.K_e:
+            if jogo_terminado:
 
-                player.atacar_2()
+                # R reinicia o jogo
+                if event.key == pygame.K_r:
 
-            if event.key in [
-                pygame.K_LCTRL,
-                pygame.K_RCTRL
-            ]:
+                    player, combate, ondas, hud = novo_jogo()
 
-                player.fazer_dash()
+                    jogo_terminado = False
 
-            if event.key == pygame.K_h:
+            else:
 
-                player.curar()
+                # O combate decide qual habilidade usar
+                # conforme a tecla (SPACE, E, H)
+                combate.processar_evento(event, player)
 
     # ========================================================
     # ATUALIZAÇÃO
@@ -1108,108 +584,13 @@ while rodando:
 
         player.atualizar_animacao(dt)
 
-        if onda_atual < len(ONDAS):
+        # Spawn, movimento e ataques dos inimigos
+        ondas.atualizar(dt, player)
 
-            onda = ONDAS[onda_atual]
+        # Cooldowns, cura e detecção de acertos do jogador
+        combate.atualizar(dt, player, ondas.inimigos)
 
-            if indice_spawn < len(onda):
-
-                tempo_spawn += dt
-
-                if tempo_spawn >= TEMPO_ENTRE_INIMIGOS:
-
-                    tipo = onda[
-                        indice_spawn
-                    ]
-
-                    if indice_spawn % 2 == 0:
-
-                        x_spawn = -80
-
-                    else:
-
-                        x_spawn = WIDTH + 80
-
-                    inimigos.append(
-                        Enemy(
-                            tipo,
-                            x_spawn
-                        )
-                    )
-
-                    indice_spawn += 1
-
-                    tempo_spawn = 0
-
-            for inimigo in inimigos:
-
-                if not inimigo.morto:
-
-                    inimigo.atualizar(
-                        dt,
-                        player
-                    )
-
-            if player.estado in [
-                "attack_1",
-                "attack_2"
-            ]:
-
-                ataque = player.get_attack_rect()
-
-                for inimigo in inimigos:
-
-                    if inimigo.morto:
-
-                        continue
-
-                    if id(inimigo) in player.attack_hit_enemies:
-
-                        continue
-
-                    if ataque.colliderect(
-                        inimigo.get_rect()
-                    ):
-
-                        if player.estado == "attack_1":
-
-                            dano = DANO_ATAQUE_1
-
-                        else:
-
-                            dano = DANO_ATAQUE_2
-
-                        inimigo.receber_dano(
-                            dano
-                        )
-
-                        player.attack_hit_enemies.add(
-                            id(inimigo)
-                        )
-
-            if (
-                indice_spawn >= len(onda)
-                and len(inimigos) > 0
-            ):
-
-                todos_mortos = all(
-                    inimigo.morto
-                    for inimigo in inimigos
-                )
-
-                if todos_mortos:
-
-                    onda_atual += 1
-
-                    if onda_atual < len(ONDAS):
-
-                        iniciar_onda()
-
-                    else:
-
-                        jogo_terminado = True
-
-        if player.estado == "death":
+        if ondas.terminou or player.estado == "death":
 
             jogo_terminado = True
 
@@ -1219,9 +600,8 @@ while rodando:
 
             player.atualizar_animacao(dt)
 
-    # Atualiza as animações e efeitos do HUD (barra de vida
-    # suave, flash de dano, fade de fim de jogo etc.)
-    hud.atualizar(dt, player)
+    # O HUD identifica inimigos derrotados e soma os pontos
+    hud.atualizar(dt, player, ondas)
 
     # ========================================================
     # DESENHAR
@@ -1229,24 +609,17 @@ while rodando:
 
     desenhar_background()
 
-    for inimigo in inimigos:
-
-        inimigo.desenhar()
+    ondas.desenhar(screen)
 
     player.desenhar()
 
     hud.desenhar(
         screen,
         player,
-        onda_atual,
-        ONDAS,
-        inimigos,
+        combate,
+        ondas,
         jogo_terminado
     )
-
-    # ========================================================
-    # ATUALIZAR TELA
-    # ========================================================
 
     pygame.display.flip()
 
